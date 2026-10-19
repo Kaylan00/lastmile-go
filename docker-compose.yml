@@ -63,6 +63,10 @@ services:
       PUBSUB_SETUP: "true"
       # opcional: com a chave, o LLM escreve a mensagem da tentativa falha
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # o simulador anda em linha reta a 60 km/h; o ETA usa os mesmos números
+      # para a previsão bater com o que se vê no mapa
+      ETA_SPEED_KMH: "60"
+      ETA_ROUTE_FACTOR: "1.0"
     ports:
       - "8081:8081"
     depends_on:
@@ -70,6 +74,30 @@ services:
         condition: service_healthy
       pubsub:
         condition: service_healthy
+
+  # Faz o papel do app dos motoristas: registra 6 motoristas e "dirige" as entregas.
+  simulator:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+      args:
+        SERVICE: simulator
+    environment:
+      DISPATCH_URL: http://dispatch:8080
+      DRIVERS: "6"
+      SPEED_KMH: "60"
+      TICK: 2s
+    depends_on:
+      - dispatch
+
+  # Página de rastreio (React) servida pelo nginx, que repassa /api para os serviços.
+  web:
+    build: ./web
+    ports:
+      - "3000:80"
+    depends_on:
+      - dispatch
+      - tracking
 
 volumes:
   pgdata:

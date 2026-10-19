@@ -1,0 +1,348 @@
+:root {
+  --ink: #15171c;
+  --muted: #5f6672;
+  --faint: #8a909c;
+  --line: #e2e5ea;
+  --bg: #f4f5f7;
+  --panel: #ffffff;
+  --accent: #0b6e4f;
+  --accent-soft: #e3f1eb;
+  --warn: #9a3412;
+  --warn-soft: #fdf0e7;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  color: var(--ink);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+.app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* topo */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 24px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 18px;
+  color: var(--ink);
+  text-decoration: none;
+  letter-spacing: -0.01em;
+}
+.brand b {
+  color: var(--accent);
+}
+.repo {
+  color: var(--muted);
+  font-size: 14px;
+  text-decoration: none;
+}
+.repo:hover {
+  color: var(--ink);
+  text-decoration: underline;
+}
+
+.demo-note {
+  margin: 0;
+  padding: 10px 24px;
+  background: #fffaeb;
+  border-bottom: 1px solid #efe1a8;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: #574811;
+}
+.demo-note code {
+  font-size: 12.5px;
+  background: rgba(0, 0, 0, 0.05);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+.demo-note a {
+  color: inherit;
+}
+
+/* duas colunas: painel e mapa */
+.layout {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(340px, 440px) 1fr;
+}
+.panel {
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+  padding: 28px 28px 32px;
+}
+.map-area {
+  position: relative;
+  min-height: 460px;
+}
+.map {
+  position: absolute;
+  inset: 0;
+}
+
+h1 {
+  font-size: 22px;
+  margin: 0 0 20px;
+  letter-spacing: -0.01em;
+}
+
+/* busca */
+.search label {
+  display: block;
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.search-row {
+  display: flex;
+  gap: 8px;
+}
+.search input {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid #cfd3da;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--ink);
+}
+.search input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+  border-color: transparent;
+}
+button {
+  font: inherit;
+  cursor: pointer;
+}
+.search button {
+  height: 40px;
+  padding: 0 18px;
+  background: var(--accent);
+  color: #fff;
+  border: 0;
+  border-radius: 6px;
+  font-weight: 600;
+}
+.search button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.secondary {
+  margin-top: 12px;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 14px;
+}
+.secondary:hover {
+  text-decoration: underline;
+}
+.secondary:disabled {
+  color: var(--faint);
+  text-decoration: none;
+  cursor: default;
+}
+
+.notice {
+  margin: 20px 0 0;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+/* resultado */
+.result {
+  margin-top: 28px;
+  border-top: 1px solid var(--line);
+  padding-top: 24px;
+}
+.title {
+  font-size: 24px;
+  margin: 0;
+  letter-spacing: -0.015em;
+}
+.title.failed {
+  color: var(--warn);
+}
+.eta {
+  margin: 6px 0 0;
+  font-size: 15px;
+  color: var(--muted);
+}
+.message {
+  margin: 16px 0 0;
+  padding: 12px 14px;
+  background: var(--warn-soft);
+  border-radius: 6px;
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: #4a2410;
+}
+
+/* linha do tempo */
+.steps {
+  list-style: none;
+  margin: 24px 0 0;
+  padding: 0;
+}
+.step {
+  position: relative;
+  display: grid;
+  grid-template-columns: 18px 1fr auto;
+  align-items: start;
+  gap: 12px;
+  padding-bottom: 18px;
+  font-size: 14.5px;
+}
+.step:last-child {
+  padding-bottom: 0;
+}
+.step::before {
+  content: '';
+  position: absolute;
+  left: 8px;
+  top: 18px;
+  bottom: -1px;
+  width: 2px;
+  background: var(--line);
+}
+.step:last-child::before {
+  display: none;
+}
+.step.done::before {
+  background: var(--accent);
+}
+.dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid #c9cdd4;
+  background: var(--panel);
+}
+.step.done .dot {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.step.current .dot {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-soft);
+}
+.step.failed.done .dot {
+  background: var(--warn);
+  border-color: var(--warn);
+}
+.step.todo .label {
+  color: var(--faint);
+}
+.step time {
+  color: var(--muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.details {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 16px;
+  margin: 24px 0 0;
+  font-size: 13.5px;
+}
+.details dt {
+  color: var(--muted);
+}
+.details dd {
+  margin: 0;
+}
+.mono {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 12px;
+  word-break: break-all;
+}
+.updated {
+  margin: 16px 0 0;
+  font-size: 12.5px;
+  color: var(--faint);
+}
+
+.footer {
+  padding: 14px 24px;
+  font-size: 12.5px;
+  color: var(--faint);
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+}
+
+/* marcadores do mapa */
+.pin {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  font: 700 12px/1 system-ui, sans-serif;
+  color: #fff;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+.pin.pickup {
+  background: #374151;
+  border-radius: 6px;
+}
+.pin.dropoff {
+  background: var(--accent);
+  border-radius: 50%;
+}
+.pin.driver {
+  width: 18px;
+  height: 18px;
+  margin: 5px;
+  background: #2563eb;
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 6px rgba(37, 99, 235, 0.2),
+    0 1px 4px rgba(0, 0, 0, 0.35);
+}
+
+@media (max-width: 860px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+  .panel {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    padding: 20px 16px 24px;
+  }
+  .map-area {
+    min-height: 0;
+    height: 360px;
+  }
+  .topbar,
+  .demo-note,
+  .footer {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+}

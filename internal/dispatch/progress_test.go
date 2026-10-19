@@ -54,7 +54,7 @@ func TestReportProgress_FullDelivery(t *testing.T) {
 		}
 	}
 
-	want := []events.Type{events.OrderAssigned, events.OrderPickedUp, events.OrderOutForDelivery, events.OrderDelivered}
+	want := []events.Type{events.OrderCreated, events.OrderAssigned, events.OrderPickedUp, events.OrderOutForDelivery, events.OrderDelivered}
 	got := outboxTypes(t, pool, o.ID)
 	if len(got) != len(want) {
 		t.Fatalf("eventos na outbox = %v, quero %v", got, want)
@@ -102,9 +102,9 @@ func TestReportProgress_Rules(t *testing.T) {
 		})
 	}
 
-	// o retry não gerou evento repetido: assigned + picked_up
-	if got := outboxTypes(t, pool, o.ID); len(got) != 2 {
-		t.Fatalf("eventos = %v, quero 2", got)
+	// o retry não gerou evento repetido: created + assigned + picked_up
+	if got := outboxTypes(t, pool, o.ID); len(got) != 3 {
+		t.Fatalf("eventos = %v, quero 3", got)
 	}
 }
 
@@ -131,8 +131,8 @@ func TestUpdateLocation(t *testing.T) {
 		t.Fatal(err)
 	}
 	types := outboxTypes(t, pool, o.ID)
-	if len(types) != 2 || types[1] != events.OrderLocation {
-		t.Fatalf("eventos = %v, quero [order.assigned order.location_updated]", types)
+	if len(types) != 3 || types[2] != events.OrderLocation {
+		t.Fatalf("eventos = %v, quero [order.created order.assigned order.location_updated]", types)
 	}
 
 	if _, err := store.UpdateLocation(ctx, "nao-existe", moved); !errors.Is(err, ErrNotFound) {

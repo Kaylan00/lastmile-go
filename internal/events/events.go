@@ -23,6 +23,7 @@ var uuidRe = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[
 type Type string
 
 const (
+	OrderCreated        Type = "order.created" // pedido criado, ainda procurando motorista
 	OrderAssigned       Type = "order.assigned"
 	OrderPickedUp       Type = "order.picked_up"
 	OrderOutForDelivery Type = "order.out_for_delivery"
@@ -32,6 +33,7 @@ const (
 )
 
 var statusByType = map[Type]order.Status{
+	OrderCreated:        order.StatusPending,
 	OrderAssigned:       order.StatusAssigned,
 	OrderPickedUp:       order.StatusPickedUp,
 	OrderOutForDelivery: order.StatusOutForDelivery,

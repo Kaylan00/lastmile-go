@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/Kaylan00/lastmile-go/internal/events"
 	"github.com/Kaylan00/lastmile-go/internal/geo"
 )
 
@@ -51,16 +52,36 @@ func scanDriver(row pgx.Row) (Driver, error) {
 	return d, nil
 }
 
-// CreateOrder grava um pedido novo com status pending.
+// CreateOrder grava um pedido novo com status pending e o evento order.created
+// na outbox, na mesma transação. Assim o comprador já acompanha o pedido
+// enquanto ele espera motorista.
 func (s *Store) CreateOrder(ctx context.Context, pickup, dropoff geo.Point) (Order, error) {
-	row := s.db.QueryRow(ctx, `
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return Order{}, err
+	}
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+
+	o, err := scanOrder(tx.QueryRow(ctx, `
 		INSERT INTO orders (pickup_lat, pickup_lng, dropoff_lat, dropoff_lng)
 		VALUES ($1, $2, $3, $4)
 		RETURNING `+orderColumns,
-		pickup.Lat, pickup.Lng, dropoff.Lat, dropoff.Lng)
-	o, err := scanOrder(row)
+		pickup.Lat, pickup.Lng, dropoff.Lat, dropoff.Lng))
 	if err != nil {
 		return Order{}, fmt.Errorf("criando pedido: %w", err)
+	}
+	if err := enqueue(ctx, tx, events.Event{
+		ID:         events.NewID(),
+		Type:       events.OrderCreated,
+		OrderID:    o.ID,
+		OccurredAt: o.CreatedAt.UTC(),
+		Pickup:     o.Pickup,
+		Dropoff:    o.Dropoff,
+	}); err != nil {
+		return Order{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Order{}, fmt.Errorf("commit: %w", err)
 	}
 	return o, nil
 }

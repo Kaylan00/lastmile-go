@@ -70,7 +70,7 @@ func TestParse(t *testing.T) {
 }
 
 func TestTypeStatusMapping(t *testing.T) {
-	for _, s := range []order.Status{order.StatusAssigned, order.StatusPickedUp, order.StatusOutForDelivery, order.StatusDelivered, order.StatusFailedAttempt} {
+	for _, s := range []order.Status{order.StatusPending, order.StatusAssigned, order.StatusPickedUp, order.StatusOutForDelivery, order.StatusDelivered, order.StatusFailedAttempt} {
 		typ, ok := TypeFor(s)
 		if !ok {
 			t.Fatalf("status %s sem tipo de evento", s)
@@ -78,9 +78,6 @@ func TestTypeStatusMapping(t *testing.T) {
 		if back, ok := typ.Status(); !ok || back != s {
 			t.Errorf("%s -> %s -> %s", s, typ, back)
 		}
-	}
-	if _, ok := TypeFor(order.StatusPending); ok {
-		t.Error("pending não gera evento")
 	}
 	if _, ok := OrderLocation.Status(); ok {
 		t.Error("evento de posição não muda status")

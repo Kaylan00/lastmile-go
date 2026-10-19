@@ -61,7 +61,7 @@ func TestAssignNextWritesEventToOutbox(t *testing.T) {
 	}
 
 	var payload []byte
-	if err := pool.QueryRow(ctx, `SELECT payload FROM outbox WHERE order_id = $1`, o.ID).Scan(&payload); err != nil {
+	if err := pool.QueryRow(ctx, `SELECT payload FROM outbox WHERE order_id = $1 AND event_type = 'order.assigned'`, o.ID).Scan(&payload); err != nil {
 		t.Fatalf("evento não foi para a outbox: %v", err)
 	}
 	e, err := events.Parse(payload)
@@ -90,14 +90,14 @@ func TestRelayPublishesPendingEvents(t *testing.T) {
 	pub := &fakePublisher{}
 	relay := NewRelay(pool, pub, logging.Discard())
 	n, err := relay.PublishPending(ctx)
-	if err != nil || n != 3 {
-		t.Fatalf("PublishPending = %d, %v; quero 3, nil", n, err)
+	if err != nil || n != 6 { // 3 pedidos x (order.created + order.assigned)
+		t.Fatalf("PublishPending = %d, %v; quero 6, nil", n, err)
 	}
 	if got := countUnpublished(t, pool); got != 0 {
 		t.Fatalf("%d eventos continuam sem published_at", got)
 	}
 	msgs := pub.published()
-	if msgs[0].Attributes["event_type"] != string(events.OrderAssigned) || msgs[0].Attributes["event_id"] == "" {
+	if msgs[0].Attributes["event_type"] != string(events.OrderCreated) || msgs[0].Attributes["event_id"] == "" {
 		t.Fatalf("atributos da mensagem: %v", msgs[0].Attributes)
 	}
 
@@ -123,19 +123,19 @@ func TestRelayKeepsEventsWhilePubSubIsDown(t *testing.T) {
 	if _, err := relay.PublishPending(ctx); err == nil {
 		t.Fatal("esperava erro com o Pub/Sub fora do ar")
 	}
-	if got := countUnpublished(t, pool); got != 1 {
+	if got := countUnpublished(t, pool); got != 2 {
 		t.Fatalf("o evento deveria continuar na outbox, sem published_at (pendentes = %d)", got)
 	}
 	var attempts int
 	var lastErr string
-	_ = pool.QueryRow(ctx, `SELECT attempts, last_error FROM outbox`).Scan(&attempts, &lastErr)
+	_ = pool.QueryRow(ctx, `SELECT attempts, last_error FROM outbox ORDER BY id LIMIT 1`).Scan(&attempts, &lastErr)
 	if attempts != 1 || lastErr == "" {
 		t.Fatalf("attempts=%d last_error=%q; quero 1 e a mensagem do erro", attempts, lastErr)
 	}
 
 	pub.setFail(nil) // o Pub/Sub voltou
-	if n, err := relay.PublishPending(ctx); err != nil || n != 1 {
-		t.Fatalf("depois de voltar: %d, %v; quero 1, nil", n, err)
+	if n, err := relay.PublishPending(ctx); err != nil || n != 2 {
+		t.Fatalf("depois de voltar: %d, %v; quero 2, nil", n, err)
 	}
 	if got := countUnpublished(t, pool); got != 0 {
 		t.Fatalf("pendentes = %d, quero 0", got)
