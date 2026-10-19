@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/Kaylan00/lastmile-go/internal/geo"
+	"github.com/Kaylan00/lastmile-go/internal/order"
 	"github.com/Kaylan00/lastmile-go/internal/platform/httpx"
 )
 
@@ -31,6 +32,9 @@ func (a *API) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /orders/{id}", a.getOrder)
 	mux.HandleFunc("POST /drivers/{id}/availability", a.setAvailability)
 	mux.HandleFunc("GET /drivers/{id}", a.getDriver)
+	// rotas do app do motorista durante a entrega
+	mux.HandleFunc("POST /orders/{id}/events", a.reportProgress)
+	mux.HandleFunc("POST /drivers/{id}/location", a.updateLocation)
 }
 
 type createOrderRequest struct {
@@ -116,6 +120,86 @@ func (a *API) getDriver(w http.ResponseWriter, r *http.Request) {
 	}
 	httpx.WriteJSON(w, http.StatusOK, d)
 }
+
+type progressRequest struct {
+	DriverID string       `json:"driver_id"`
+	Status   order.Status `json:"status"`
+	Position *geo.Point   `json:"position"`
+	Note     string       `json:"note"`
+}
+
+type progressResponse struct {
+	Order
+	Changed bool `json:"changed"` // false quando a etapa repetiu (retry do app)
+}
+
+func (a *API) reportProgress(w http.ResponseWriter, r *http.Request) {
+	var req progressRequest
+	if err := httpx.DecodeJSON(w, r, &req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	switch {
+	case !validDriverID(req.DriverID):
+		httpx.WriteError(w, http.StatusBadRequest, "driver_id inválido")
+		return
+	case !req.Status.Valid() || req.Status == order.StatusPending || req.Status == order.StatusAssigned:
+		httpx.WriteError(w, http.StatusBadRequest, "status deve ser picked_up, out_for_delivery, delivered ou failed_attempt")
+		return
+	case len(req.Note) > maxNoteLen:
+		httpx.WriteError(w, http.StatusBadRequest, fmt.Sprintf("note com mais de %d caracteres", maxNoteLen))
+		return
+	}
+	if req.Position != nil {
+		if err := validatePoint("position", req.Position); err != nil {
+			httpx.WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+
+	o, changed, err := a.store.ReportProgress(r.Context(), Progress{
+		OrderID:  r.PathValue("id"),
+		DriverID: req.DriverID,
+		Status:   req.Status,
+		Position: req.Position,
+		Note:     req.Note,
+	})
+	if err != nil {
+		a.fail(w, r, err)
+		return
+	}
+	if changed {
+		a.log.Info("etapa da entrega", "order_id", o.ID, "driver_id", o.DriverID, "status", o.Status)
+		if o.Status.Terminal() {
+			a.wake() // o motorista ficou livre: pode pegar outro pedido
+		}
+	}
+	httpx.WriteJSON(w, http.StatusOK, progressResponse{Order: o, Changed: changed})
+}
+
+type locationRequest struct {
+	Position *geo.Point `json:"position"`
+}
+
+func (a *API) updateLocation(w http.ResponseWriter, r *http.Request) {
+	var req locationRequest
+	if err := httpx.DecodeJSON(w, r, &req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := validatePoint("position", req.Position); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	d, err := a.store.UpdateLocation(r.Context(), r.PathValue("id"), *req.Position)
+	if err != nil {
+		a.fail(w, r, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, d)
+}
+
+const maxNoteLen = 500
 
 func validatePoint(field string, p *geo.Point) error {
 	if p == nil {

@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/Kaylan00/lastmile-go/internal/events"
 	"github.com/Kaylan00/lastmile-go/internal/geo"
 )
 
@@ -18,7 +19,8 @@ type Assignment struct {
 }
 
 // AssignNext pega o pedido pendente mais antigo e entrega ao motorista livre
-// mais próximo do ponto de coleta. Tudo numa transação só.
+// mais próximo do ponto de coleta. Tudo numa transação só, junto com o evento
+// order.assigned na outbox.
 //
 // Por que não dá alocação dupla, mesmo com várias goroutines e várias réplicas:
 //
@@ -42,15 +44,15 @@ func (s *Store) AssignNext(ctx context.Context) (Assignment, error) {
 
 	// 1) O pedido pendente mais antigo que ninguém está alocando agora.
 	var orderID string
-	var pickup geo.Point
+	var pickup, dropoff geo.Point
 	err = tx.QueryRow(ctx, `
-		SELECT id, pickup_lat, pickup_lng
+		SELECT id, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng
 		  FROM orders
 		 WHERE status = 'pending'
 		 ORDER BY created_at, id
 		 LIMIT 1
 		   FOR UPDATE SKIP LOCKED`,
-	).Scan(&orderID, &pickup.Lat, &pickup.Lng)
+	).Scan(&orderID, &pickup.Lat, &pickup.Lng, &dropoff.Lat, &dropoff.Lng)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Assignment{}, ErrNoPendingOrder
 	}
@@ -60,15 +62,16 @@ func (s *Store) AssignNext(ctx context.Context) (Assignment, error) {
 
 	// 2) O motorista livre mais próximo do ponto de coleta que ninguém travou.
 	a := Assignment{OrderID: orderID}
+	var driverPos geo.Point
 	err = tx.QueryRow(ctx, `
-		SELECT id, haversine_km(lat, lng, $1, $2) AS distance_km
+		SELECT id, lat, lng, haversine_km(lat, lng, $1, $2) AS distance_km
 		  FROM drivers
 		 WHERE status = 'available'
 		 ORDER BY distance_km, id
 		 LIMIT 1
 		   FOR UPDATE SKIP LOCKED`,
 		pickup.Lat, pickup.Lng,
-	).Scan(&a.DriverID, &a.DistanceKm)
+	).Scan(&a.DriverID, &driverPos.Lat, &driverPos.Lng, &a.DistanceKm)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Assignment{}, ErrNoDriverAvailable // o defer faz rollback e o pedido volta para a fila
 	}
@@ -88,6 +91,20 @@ func (s *Store) AssignNext(ctx context.Context) (Assignment, error) {
 		   SET status = 'busy', current_order_id = $1, updated_at = now()
 		 WHERE id = $2`, a.OrderID, a.DriverID); err != nil {
 		return Assignment{}, fmt.Errorf("atualizando motorista: %w", err)
+	}
+
+	// 4) O evento vai para a outbox na mesma transação (ver outbox.go).
+	if err := enqueue(ctx, tx, events.Event{
+		ID:         events.NewID(),
+		Type:       events.OrderAssigned,
+		OrderID:    a.OrderID,
+		DriverID:   a.DriverID,
+		OccurredAt: events.Now(),
+		Position:   &driverPos,
+		Pickup:     pickup,
+		Dropoff:    dropoff,
+	}); err != nil {
+		return Assignment{}, err
 	}
 
 	if err := tx.Commit(ctx); err != nil {

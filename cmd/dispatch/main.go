@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/Kaylan00/lastmile-go/internal/platform/config"
 	"github.com/Kaylan00/lastmile-go/internal/platform/httpx"
 	"github.com/Kaylan00/lastmile-go/internal/platform/logging"
+	"github.com/Kaylan00/lastmile-go/internal/platform/messaging"
 	"github.com/Kaylan00/lastmile-go/internal/platform/postgres"
 	"github.com/Kaylan00/lastmile-go/migrations"
 )
@@ -27,6 +29,10 @@ type Config struct {
 	DBMaxConns      int
 	RequestTimeout  time.Duration
 	ShutdownTimeout time.Duration
+	Workers         int
+	GCPProject      string
+	Topic           string
+	PubSubSetup     bool
 }
 
 func loadConfig(env *config.Env) (Config, error) {
@@ -36,8 +42,19 @@ func loadConfig(env *config.Env) (Config, error) {
 		DBMaxConns:      env.Int("DB_MAX_CONNS", 10),
 		RequestTimeout:  env.Duration("REQUEST_TIMEOUT", 5*time.Second),
 		ShutdownTimeout: env.Duration("SHUTDOWN_TIMEOUT", 8*time.Second),
+		Workers:         env.Int("WORKERS", 4),
+		GCPProject:      env.Required("GCP_PROJECT"),
+		Topic:           env.String("PUBSUB_TOPIC", "order-events"),
+		PubSubSetup:     env.Bool("PUBSUB_SETUP", false), // cria o tópico na subida (emulador/dev)
 	}
-	return cfg, env.Err()
+	if err := env.Err(); err != nil {
+		return cfg, err
+	}
+	// cada worker segura uma conexão durante a alocação; sobra pelo menos 2 para o HTTP e o relay
+	if cfg.Workers > cfg.DBMaxConns-2 {
+		return cfg, fmt.Errorf("WORKERS (%d) precisa ser no máximo DB_MAX_CONNS-2 (%d)", cfg.Workers, cfg.DBMaxConns-2)
+	}
+	return cfg, nil
 }
 
 func main() {
@@ -59,30 +76,64 @@ func run(ctx context.Context, log *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("config: %w", err)
 	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
+	// Banco
 	pool, err := postgres.Connect(ctx, cfg.DatabaseURL, cfg.DBMaxConns, log)
 	if err != nil {
 		return err
 	}
 	defer pool.Close()
-
 	if err := postgres.Migrate(ctx, pool, migrations.Dispatch(), log); err != nil {
 		return err
 	}
-	store := dispatch.NewStore(pool)
 
+	// Pub/Sub
+	ps, err := messaging.Connect(ctx, cfg.GCPProject)
+	if err != nil {
+		return err
+	}
+	defer ps.Close()
+	if cfg.PubSubSetup {
+		setupCtx, cancelSetup := context.WithTimeout(ctx, 10*time.Second)
+		err := messaging.EnsureTopic(setupCtx, ps, cfg.Topic)
+		cancelSetup()
+		if err != nil {
+			return err
+		}
+	}
+	publisher := messaging.NewPublisher(ps, cfg.Topic)
+	defer publisher.Stop() // os defers rodam em ordem inversa: o publisher para antes do client fechar
+
+	// Domínio
+	store := dispatch.NewStore(pool)
+	workers := dispatch.NewWorkers(store, log, cfg.Workers)
+	relay := dispatch.NewRelay(pool, publisher, log)
+
+	// HTTP
 	health := httpx.NewHealth(pool.Ping)
 	mux := http.NewServeMux()
 	health.Register(mux)
-	dispatch.NewAPI(store, log, nil).Register(mux)
-
+	dispatch.NewAPI(store, log, workers.Wake).Register(mux)
 	handler := httpx.Chain(mux, httpx.Recover(log), httpx.Logging(log), httpx.Timeout(cfg.RequestTimeout))
 	srv := httpx.NewServer(cfg.HTTPAddr, handler)
+
+	// Goroutines de fundo: workers de alocação e relay da outbox.
+	var wg sync.WaitGroup
+	wg.Go(func() { workers.Run(ctx) })
+	wg.Go(func() { relay.Run(ctx) })
 
 	health.SetReady(true)
 	go func() {
 		<-ctx.Done()
 		health.SetReady(false) // /ready passa a dar 503 assim que o desligamento começa
 	}()
-	return httpx.Run(ctx, srv, cfg.ShutdownTimeout, log)
+
+	// Bloqueia até o SIGTERM. Aí: o servidor HTTP termina as requisições em
+	// andamento, os workers terminam a alocação em andamento e o relay para.
+	err = httpx.Run(ctx, srv, cfg.ShutdownTimeout, log)
+	cancel() // se o servidor parou por erro, derruba o resto também
+	wg.Wait()
+	return err
 }
