@@ -1,0 +1,9 @@
+.git
+.github
+**/node_modules
+web/dist
+docs
+*.md
+.env
+.env.*
+.vercel

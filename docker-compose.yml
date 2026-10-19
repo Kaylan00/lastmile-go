@@ -1,0 +1,50 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: lastmile
+      POSTGRES_PASSWORD: lastmile # senha só de desenvolvimento local
+      POSTGRES_DB: lastmile
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./deploy/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lastmile -d lastmile"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  dispatch:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+      args:
+        SERVICE: dispatch
+    environment:
+      PORT: "8080"
+      DATABASE_URL: postgres://lastmile:lastmile@postgres:5432/dispatch?sslmode=disable
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  tracking:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+      args:
+        SERVICE: tracking
+    environment:
+      PORT: "8081"
+      DATABASE_URL: postgres://lastmile:lastmile@postgres:5432/tracking?sslmode=disable
+    ports:
+      - "8081:8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
