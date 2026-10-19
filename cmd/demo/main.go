@@ -13,7 +13,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Kaylan00/lastmile-go/internal/demo"
+	"github.com/Kaylan00/lastmile-go/demo"
 	"github.com/Kaylan00/lastmile-go/internal/platform/config"
 	"github.com/Kaylan00/lastmile-go/internal/platform/httpx"
 	"github.com/Kaylan00/lastmile-go/internal/platform/logging"

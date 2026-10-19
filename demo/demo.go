@@ -11,6 +11,10 @@
 // carrega tudo no próprio id (hora de criação, coleta, entrega e uma semente),
 // e a entrega é simulada em função do tempo: a cada consulta, os eventos que
 // "já aconteceram" são gerados de novo e aplicados ao estado.
+//
+// Por que este pacote não fica em internal/: a Vercel compila a função de
+// api/ fora do caminho do módulo, e o Go só deixa importar internal/ de dentro
+// do módulo. Este pacote é a "porta" pública; ele mesmo usa os internal/.
 package demo
 
 import (

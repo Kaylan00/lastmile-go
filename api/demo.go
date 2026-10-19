@@ -4,12 +4,15 @@
 //
 // O vercel.json manda /api/* para esta função com o caminho original em
 // ?path=..., e aqui o caminho é reconstruído antes de chamar as rotas da demo.
+//
+// A Vercel compila este arquivo como um pacote fora do módulo, então ele só
+// pode importar pacotes públicos (por isso a demo fica em demo/, não em internal/).
 package handler
 
 import (
 	"net/http"
 
-	"github.com/Kaylan00/lastmile-go/internal/demo"
+	"github.com/Kaylan00/lastmile-go/demo"
 )
 
 var routes = demo.NewHandler()

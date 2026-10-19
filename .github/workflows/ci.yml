@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    name: Go (gofmt, vet, testes com -race)
+    runs-on: ubuntu-latest
+    services:
+      # Postgres de verdade para os testes de integração (inclusive o de
+      # 100 goroutines x 10 motoristas). Sem ele o teste falha no CI em vez de ser pulado.
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: lastmile
+          POSTGRES_PASSWORD: lastmile
+          POSTGRES_DB: lastmile
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U lastmile -d lastmile"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    env:
+      TEST_DATABASE_URL: postgres://lastmile:lastmile@localhost:5432/lastmile?sslmode=disable
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+      - name: go vet
+        run: go vet ./...
+      - name: testes (unitários e de integração, com race detector)
+        run: go test -race -count=1 ./...
+      - name: build
+        run: go build ./...
+
+  web:
+    name: Página React (typecheck e build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run build
+
+  docker:
+    name: Imagens Docker
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: dispatch
+        run: docker build -f deploy/Dockerfile --build-arg SERVICE=dispatch -t lastmile-dispatch .
+      - name: tracking
+        run: docker build -f deploy/Dockerfile --build-arg SERVICE=tracking -t lastmile-tracking .
+      - name: simulator
+        run: docker build -f deploy/Dockerfile --build-arg SERVICE=simulator -t lastmile-simulator .
+      - name: web
+        run: docker build -t lastmile-web web

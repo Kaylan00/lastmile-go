@@ -1,0 +1,35 @@
+# A página fala sempre com /api. O nginx repassa cada rota para o serviço certo,
+# e o navegador não precisa de CORS (tudo na mesma origem).
+#
+# Este arquivo é um template: a imagem oficial do nginx troca ${PORT},
+# ${DISPATCH_URL} e ${TRACKING_URL} pelas variáveis de ambiente na subida.
+# No docker-compose elas apontam para os containers; no Cloud Run, para as
+# URLs https dos serviços.
+server {
+    listen ${PORT};
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # necessário quando o destino é https (Cloud Run): manda o nome do host no TLS
+    proxy_ssl_server_name on;
+
+    # rastreio -> tracking-service
+    location ~ ^/api/orders/[^/]+/tracking$ {
+        rewrite ^/api(/.*)$ $1 break;
+        proxy_pass ${TRACKING_URL};
+    }
+
+    # criar pedido -> dispatch-service
+    location = /api/orders {
+        rewrite ^/api(/.*)$ $1 break;
+        proxy_pass ${DISPATCH_URL};
+    }
+
+    location /api/ {
+        return 404;
+    }
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
