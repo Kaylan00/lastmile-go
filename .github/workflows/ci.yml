@@ -78,3 +78,23 @@ jobs:
         run: docker build -f deploy/Dockerfile --build-arg SERVICE=simulator -t lastmile-simulator .
       - name: web
         run: docker build -t lastmile-web web
+
+  e2e:
+    name: docker compose ponta a ponta
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: sobe tudo do zero (Postgres, emulador do Pub/Sub, serviços, simulador, página)
+        run: docker compose up -d --build
+        env:
+          SIM_SPEED_KMH: "600"
+      - name: cria um pedido pela página e espera a entrega
+        run: ./deploy/smoke-test.sh
+        env:
+          TIMEOUT: "300"
+      - name: logs
+        if: always()
+        run: docker compose logs --tail 50
+      - name: derruba
+        if: always()
+        run: docker compose down -v

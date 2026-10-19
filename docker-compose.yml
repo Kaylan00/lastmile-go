@@ -85,7 +85,7 @@ services:
     environment:
       DISPATCH_URL: http://dispatch:8080
       DRIVERS: "6"
-      SPEED_KMH: "60"
+      SPEED_KMH: ${SIM_SPEED_KMH:-60} # o teste do CI acelera para não esperar minutos
       TICK: 2s
     depends_on:
       - dispatch
