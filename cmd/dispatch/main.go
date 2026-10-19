@@ -12,10 +12,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Kaylan00/lastmile-go/internal/dispatch"
 	"github.com/Kaylan00/lastmile-go/internal/platform/config"
 	"github.com/Kaylan00/lastmile-go/internal/platform/httpx"
 	"github.com/Kaylan00/lastmile-go/internal/platform/logging"
 	"github.com/Kaylan00/lastmile-go/internal/platform/postgres"
+	"github.com/Kaylan00/lastmile-go/migrations"
 )
 
 // Config reúne tudo o que o serviço lê do ambiente.
@@ -64,9 +66,15 @@ func run(ctx context.Context, log *slog.Logger) error {
 	}
 	defer pool.Close()
 
+	if err := postgres.Migrate(ctx, pool, migrations.Dispatch(), log); err != nil {
+		return err
+	}
+	store := dispatch.NewStore(pool)
+
 	health := httpx.NewHealth(pool.Ping)
 	mux := http.NewServeMux()
 	health.Register(mux)
+	dispatch.NewAPI(store, log, nil).Register(mux)
 
 	handler := httpx.Chain(mux, httpx.Recover(log), httpx.Logging(log), httpx.Timeout(cfg.RequestTimeout))
 	srv := httpx.NewServer(cfg.HTTPAddr, handler)

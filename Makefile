@@ -1,8 +1,15 @@
-.PHONY: test vet fmt up down logs
+.PHONY: test test-integration vet fmt up down logs
+
+TEST_DATABASE_URL ?= postgres://lastmile:lastmile@localhost:5432/lastmile?sslmode=disable
 
 # testes unitários (os de integração são pulados se não houver banco)
 test:
 	go test -race ./...
+
+# todos os testes, inclusive os de integração, contra o Postgres do docker-compose
+test-integration:
+	docker compose up -d --wait postgres
+	TEST_DATABASE_URL="$(TEST_DATABASE_URL)" go test -race -count=1 ./...
 
 vet:
 	go vet ./...
