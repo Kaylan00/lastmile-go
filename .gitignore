@@ -1,0 +1,17 @@
+# Go
+/bin/
+*.exe
+*.test
+*.out
+coverage.*
+# env
+.env
+.env.*
+!.env.example
+# node
+node_modules/
+web/dist/
+# editores
+.idea/
+.vscode/
+.DS_Store
