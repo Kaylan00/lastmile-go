@@ -8,6 +8,11 @@ on:
 permissions:
   contents: read
 
+# um push novo na mesma branch cancela a execução anterior
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   go:
     name: Go (gofmt, vet, testes com -race)

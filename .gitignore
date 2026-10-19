@@ -15,6 +15,5 @@ web/dist/
 .idea/
 .vscode/
 .DS_Store
-.vercel
-
+# vercel
 .vercel
