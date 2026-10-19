@@ -61,6 +61,8 @@ services:
       GCP_PROJECT: lastmile-local
       PUBSUB_EMULATOR_HOST: pubsub:8085
       PUBSUB_SETUP: "true"
+      # opcional: com a chave, o LLM escreve a mensagem da tentativa falha
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     ports:
       - "8081:8081"
     depends_on:

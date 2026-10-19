@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Kaylan00/lastmile-go/internal/events"
+	"github.com/Kaylan00/lastmile-go/internal/notify"
 	"github.com/Kaylan00/lastmile-go/internal/platform/messaging"
 )
 
@@ -21,16 +22,18 @@ import (
 //   - mensagem inválida (JSON quebrado, campo faltando): tentar de novo nunca
 //     vai dar certo, então ela vai direto para a dead-letter e recebe ack.
 type Consumer struct {
-	store *Store
-	dlq   messaging.Publisher
-	log   *slog.Logger
+	store    *Store
+	dlq      messaging.Publisher
+	notifier *notify.Notifier
+	log      *slog.Logger
 
 	ProcessTimeout time.Duration // prazo para processar uma mensagem
 }
 
-// NewConsumer cria o consumidor. dlq publica no tópico de dead-letter.
-func NewConsumer(store *Store, dlq messaging.Publisher, log *slog.Logger) *Consumer {
-	return &Consumer{store: store, dlq: dlq, log: log, ProcessTimeout: 10 * time.Second}
+// NewConsumer cria o consumidor. dlq publica no tópico de dead-letter e
+// notifier escreve a mensagem do comprador quando a entrega falha.
+func NewConsumer(store *Store, dlq messaging.Publisher, notifier *notify.Notifier, log *slog.Logger) *Consumer {
+	return &Consumer{store: store, dlq: dlq, notifier: notifier, log: log, ProcessTimeout: 10 * time.Second}
 }
 
 // Handle é o messaging.Handler: devolver nil = ack, devolver erro = nack.
@@ -45,7 +48,12 @@ func (c *Consumer) Handle(ctx context.Context, m messaging.Received) error {
 	pctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), c.ProcessTimeout)
 	defer cancel()
 
-	res, err := c.store.Process(pctx, e, "")
+	message, err := c.buyerMessage(pctx, e)
+	if err != nil {
+		return err
+	}
+
+	res, err := c.store.Process(pctx, e, message)
 	if err != nil {
 		c.log.Warn("falha ao processar evento; o Pub/Sub vai entregar de novo",
 			"event_id", e.ID, "type", e.Type, "delivery_attempt", m.DeliveryAttempt, "err", err)
@@ -61,6 +69,27 @@ func (c *Consumer) Handle(ctx context.Context, m messaging.Received) error {
 		c.log.Info("evento aplicado", "event_id", e.ID, "type", e.Type, "order_id", e.OrderID, "status", res.Status)
 	}
 	return nil
+}
+
+// buyerMessage chama o LLM (via notify) só para eventos de tentativa falha.
+//
+// A chamada acontece ANTES da transação de Process, para não segurar o lock da
+// linha do pedido enquanto espera o LLM (até 3 s). Antes, uma checagem rápida
+// evita pagar uma chamada ao LLM por uma mensagem repetida.
+func (c *Consumer) buyerMessage(ctx context.Context, e events.Event) (string, error) {
+	if e.Type != events.OrderFailedAttempt {
+		return "", nil
+	}
+	done, err := c.store.AlreadyProcessed(ctx, e.ID)
+	if err != nil {
+		return "", err
+	}
+	if done {
+		return "", nil
+	}
+	msg, source := c.notifier.BuyerMessage(ctx, e.Note)
+	c.log.Info("mensagem para o comprador", "order_id", e.OrderID, "source", source)
+	return msg, nil
 }
 
 // deadLetter publica a mensagem inválida no tópico de dead-letter, com o motivo

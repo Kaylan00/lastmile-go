@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/Kaylan00/lastmile-go/internal/eta"
 	"github.com/Kaylan00/lastmile-go/internal/events"
+	"github.com/Kaylan00/lastmile-go/internal/notify"
 	"github.com/Kaylan00/lastmile-go/internal/order"
 	"github.com/Kaylan00/lastmile-go/internal/platform/logging"
 	"github.com/Kaylan00/lastmile-go/internal/platform/messaging"
@@ -52,7 +54,7 @@ func received(t *testing.T, e events.Event) messaging.Received {
 func TestConsumerHandle(t *testing.T) {
 	store, pool := newTestStore(t)
 	dlq := &fakePublisher{}
-	c := NewConsumer(store, dlq, logging.Discard())
+	c := NewConsumer(store, dlq, notify.New(nil, time.Second, logging.Discard()), logging.Discard())
 	ctx := context.Background()
 
 	assigned := received(t, ev(events.OrderAssigned, 0, pt(-23.54, -46.62)))
@@ -76,6 +78,56 @@ func TestConsumerHandle(t *testing.T) {
 	pool.Close()
 	if err := c.Handle(ctx, received(t, ev(events.OrderPickedUp, 5, nil))); err == nil {
 		t.Fatal("com o banco fechado o Handle deveria devolver erro (nack)")
+	}
+}
+
+// stubLLM conta as chamadas e devolve sempre a mesma frase.
+type stubLLM struct {
+	mu    sync.Mutex
+	calls int
+}
+
+func (s *stubLLM) Complete(context.Context, string, string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.calls++
+	return "Não havia ninguém no endereço para receber. Vamos combinar uma nova tentativa.", nil
+}
+
+func TestConsumerFailedAttemptUsesLLMOnce(t *testing.T) {
+	store, _ := newTestStore(t)
+	llm := &stubLLM{}
+	c := NewConsumer(store, &fakePublisher{}, notify.New(llm, time.Second, logging.Discard()), logging.Discard())
+	ctx := context.Background()
+
+	if err := c.Handle(ctx, received(t, ev(events.OrderOutForDelivery, 0, pt(-23.55, -46.63)))); err != nil {
+		t.Fatal(err)
+	}
+	failed := ev(events.OrderFailedAttempt, 10, nil)
+	failed.Note = "cliente ausente"
+	msg := received(t, failed)
+	for range 3 { // a mesma mensagem entregue 3 vezes
+		if err := c.Handle(ctx, msg); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if llm.calls != 1 {
+		t.Fatalf("LLM chamado %d vezes, quero 1 (mensagem repetida não chama de novo)", llm.calls)
+	}
+	st, _, _ := store.Get(ctx, orderID)
+	if st.Status != order.StatusFailedAttempt || !strings.HasPrefix(st.BuyerMessage, "Não havia ninguém") {
+		t.Fatalf("estado: %+v", st)
+	}
+}
+
+func TestViewUsesDefaultMessageWhenMissing(t *testing.T) {
+	v := BuildView(State{OrderID: orderID, Status: order.StatusFailedAttempt}, nil, eta.DefaultParams, t0)
+	if v.Message != notify.DefaultMessage {
+		t.Fatalf("mensagem = %q, quero a padrão", v.Message)
+	}
+	if v.Timeline == nil || v.ETA != nil {
+		t.Fatalf("view: %+v", v)
 	}
 }
 
@@ -132,7 +184,7 @@ func TestConsumerWithPubSub(t *testing.T) {
 
 	dlqPub := messaging.NewPublisher(client, "order-events-dlq")
 	defer dlqPub.Stop()
-	consumer := NewConsumer(store, dlqPub, logging.Discard())
+	consumer := NewConsumer(store, dlqPub, notify.New(nil, time.Second, logging.Discard()), logging.Discard())
 
 	rctx, stop := context.WithCancel(ctx)
 	defer stop()

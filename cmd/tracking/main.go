@@ -16,6 +16,7 @@ import (
 	"cloud.google.com/go/pubsub/v2"
 
 	"github.com/Kaylan00/lastmile-go/internal/eta"
+	"github.com/Kaylan00/lastmile-go/internal/notify"
 	"github.com/Kaylan00/lastmile-go/internal/platform/config"
 	"github.com/Kaylan00/lastmile-go/internal/platform/httpx"
 	"github.com/Kaylan00/lastmile-go/internal/platform/logging"
@@ -40,6 +41,9 @@ type Config struct {
 	Concurrency         int
 	PubSubSetup         bool
 	ETA                 eta.Params
+	AnthropicAPIKey     string
+	LLMModel            string
+	LLMTimeout          time.Duration
 }
 
 func loadConfig(env *config.Env) (Config, error) {
@@ -60,6 +64,9 @@ func loadConfig(env *config.Env) (Config, error) {
 			SpeedKmh:    env.Float("ETA_SPEED_KMH", eta.DefaultParams.SpeedKmh),
 			RouteFactor: env.Float("ETA_ROUTE_FACTOR", eta.DefaultParams.RouteFactor),
 		},
+		AnthropicAPIKey: env.String("ANTHROPIC_API_KEY", ""), // vazio = sempre a mensagem padrão
+		LLMModel:        env.String("LLM_MODEL", notify.DefaultModel),
+		LLMTimeout:      env.Duration("LLM_TIMEOUT", 3*time.Second),
 	}
 	return cfg, env.Err()
 }
@@ -109,9 +116,22 @@ func run(ctx context.Context, log *slog.Logger) error {
 	dlq := messaging.NewPublisher(ps, cfg.DeadLetterTopic)
 	defer dlq.Stop()
 
+	// LLM: a variável é do tipo da INTERFACE e só recebe valor se houver chave.
+	// (Se fosse *notify.Anthropic nil guardado na interface, llm != nil seria
+	// verdadeiro e o Notifier tentaria usar um client nil: a pegadinha da
+	// "interface nil" do Go.)
+	var llm notify.LLM
+	if cfg.AnthropicAPIKey != "" {
+		llm = notify.NewAnthropic(cfg.AnthropicAPIKey, cfg.LLMModel)
+		log.Info("LLM ligado", "model", cfg.LLMModel, "timeout", cfg.LLMTimeout.String())
+	} else {
+		log.Info("sem ANTHROPIC_API_KEY: mensagens para o comprador usam o texto padrão")
+	}
+	notifier := notify.New(llm, cfg.LLMTimeout, log)
+
 	// Domínio
 	store := tracking.NewStore(pool)
-	consumer := tracking.NewConsumer(store, dlq, log)
+	consumer := tracking.NewConsumer(store, dlq, notifier, log)
 
 	// HTTP
 	health := httpx.NewHealth(pool.Ping)

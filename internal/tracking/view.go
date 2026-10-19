@@ -7,6 +7,7 @@ import (
 	"github.com/Kaylan00/lastmile-go/internal/eta"
 	"github.com/Kaylan00/lastmile-go/internal/events"
 	"github.com/Kaylan00/lastmile-go/internal/geo"
+	"github.com/Kaylan00/lastmile-go/internal/notify"
 	"github.com/Kaylan00/lastmile-go/internal/order"
 )
 
@@ -58,6 +59,9 @@ func BuildView(s State, timeline []TimelineEntry, params eta.Params, now time.Ti
 	}
 	if v.Timeline == nil {
 		v.Timeline = []TimelineEntry{} // no JSON vira [] em vez de null
+	}
+	if v.Status == order.StatusFailedAttempt && v.Message == "" {
+		v.Message = notify.DefaultMessage // o comprador nunca fica sem explicação
 	}
 	if !s.StatusAt.IsZero() {
 		at := s.StatusAt
