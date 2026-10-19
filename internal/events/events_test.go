@@ -30,6 +30,7 @@ func TestValidate(t *testing.T) {
 	}{
 		{"válido", func(*Event) {}, false},
 		{"sem id", func(e *Event) { e.ID = "" }, true},
+		{"id que não é UUID", func(e *Event) { e.ID = "evento-1" }, true},
 		{"tipo desconhecido", func(e *Event) { e.Type = "order.teleported" }, true},
 		{"sem pedido", func(e *Event) { e.OrderID = "" }, true},
 		{"sem horário", func(e *Event) { e.OccurredAt = time.Time{} }, true},
@@ -56,7 +57,8 @@ func TestParse(t *testing.T) {
 	if _, err := Parse([]byte(`{"event_id": "x"}`)); err == nil {
 		t.Error("esperava erro com evento incompleto")
 	}
-	ok := `{"event_id":"a1","type":"order.delivered","order_id":"o1","driver_id":"drv-01",
+	ok := `{"event_id":"3b8f6a52-6c1e-4d0b-9a3e-2f1c7d9e0a11","type":"order.delivered",
+		"order_id":"7f1c0e7e-1f4b-4b8e-9d55-3f6f2a8f8a10","driver_id":"drv-01",
 		"occurred_at":"2026-10-19T12:00:00Z","pickup":{"lat":-23.5,"lng":-46.6},"dropoff":{"lat":-23.6,"lng":-46.7}}`
 	e, err := Parse([]byte(ok))
 	if err != nil {

@@ -58,10 +58,15 @@ services:
     environment:
       PORT: "8081"
       DATABASE_URL: postgres://lastmile:lastmile@postgres:5432/tracking?sslmode=disable
+      GCP_PROJECT: lastmile-local
+      PUBSUB_EMULATOR_HOST: pubsub:8085
+      PUBSUB_SETUP: "true"
     ports:
       - "8081:8081"
     depends_on:
       postgres:
+        condition: service_healthy
+      pubsub:
         condition: service_healthy
 
 volumes:

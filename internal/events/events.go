@@ -10,11 +10,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"time"
 
 	"github.com/Kaylan00/lastmile-go/internal/geo"
 	"github.com/Kaylan00/lastmile-go/internal/order"
 )
+
+var uuidRe = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
 // Type é o tipo do evento.
 type Type string
@@ -80,14 +83,14 @@ type Event struct {
 // reprocessar: o consumidor manda direto para a dead-letter.
 func (e Event) Validate() error {
 	var errs []error
-	if e.ID == "" {
-		errs = append(errs, errors.New("event_id vazio"))
+	if !uuidRe.MatchString(e.ID) {
+		errs = append(errs, fmt.Errorf("event_id %q não é UUID", e.ID))
 	}
 	if !e.Type.Valid() {
 		errs = append(errs, fmt.Errorf("tipo desconhecido %q", e.Type))
 	}
-	if e.OrderID == "" {
-		errs = append(errs, errors.New("order_id vazio"))
+	if !uuidRe.MatchString(e.OrderID) {
+		errs = append(errs, fmt.Errorf("order_id %q não é UUID", e.OrderID))
 	}
 	if e.OccurredAt.IsZero() {
 		errs = append(errs, errors.New("occurred_at vazio"))

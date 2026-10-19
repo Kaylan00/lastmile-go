@@ -7,11 +7,14 @@ import (
 	"io/fs"
 )
 
-//go:embed dispatch/*.sql
+//go:embed dispatch/*.sql tracking/*.sql
 var files embed.FS
 
 // Dispatch devolve as migrations do banco do dispatch-service.
 func Dispatch() fs.FS { return sub("dispatch") }
+
+// Tracking devolve as migrations do banco do tracking-service.
+func Tracking() fs.FS { return sub("tracking") }
 
 func sub(dir string) fs.FS {
 	f, err := fs.Sub(files, dir)
